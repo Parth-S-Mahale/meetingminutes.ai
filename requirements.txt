@@ -17,3 +17,6 @@ safetensors==0.5.3
 
 openai==1.95.1
 httpx==0.28.1
+
+ffmpeg-python==0.2.0
+soundfile==0.13.1
