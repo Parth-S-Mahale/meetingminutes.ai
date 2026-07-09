@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     ALLOWED_AUDIO_EXTENSIONS: List[str] = [".mp3", ".wav", ".m4a", ".aac", ".mp4"]
 
     # Hugging Face / Models
-    HF_TOKEN: str = ""
+    HF_TOKEN: str | None = None
 
     # ASR / Whisper
     ASR_MODEL_ID: str = "openai/whisper-medium.en"

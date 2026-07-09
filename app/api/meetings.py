@@ -12,16 +12,13 @@ from app.schemas.meeting import (
     MeetingListResponse,
 )
 from app.services.file_service import save_upload_file
+from app.services.transcription_service import transcribe_audio
+from app.services.summarization_service import summarize_meeting
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
 
 def _to_detail_response(meeting: Meeting) -> MeetingDetailResponse:
-    """
-    Convert DB model -> API response schema.
-    key_decisions and action_items are stored as JSON strings in DB,
-    so we parse them safely here.
-    """
     key_decisions = []
     action_items = []
 
@@ -65,15 +62,12 @@ def upload_meeting_audio(
     db: Session = Depends(get_db)
 ):
     """
-    Step 2 version:
-    - validate + save audio file
-    - create DB record with status='uploaded'
-    - return meeting record
-
-    Step 3 will extend this endpoint to:
-    - transcribe audio
-    - summarize transcript
-    - store transcript/summary/action items
+    Full Step 3 flow:
+    1. Save audio file
+    2. Create DB record
+    3. Transcribe audio
+    4. Summarize transcript
+    5. Persist transcript + summary + action items
     """
     saved_path = save_upload_file(file)
 
@@ -87,6 +81,46 @@ def upload_meeting_audio(
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
+
+    try:
+        # Step 1: Transcribe
+        meeting.status = "transcribing"
+        db.commit()
+
+        transcription_result = transcribe_audio(saved_path)
+        meeting.transcript = transcription_result["transcript"]
+        meeting.language = transcription_result.get("language")
+        meeting.duration_seconds = transcription_result.get("duration_seconds")
+        meeting.status = "transcribed"
+        db.commit()
+
+        # Step 2: Summarize
+        meeting.status = "summarizing"
+        db.commit()
+
+        summary_result = summarize_meeting(
+            transcript=meeting.transcript,
+            title=meeting.title
+        )
+
+        meeting.summary = summary_result["summary"]
+        meeting.key_decisions = json.dumps(summary_result["key_decisions"], ensure_ascii=False)
+        meeting.action_items = json.dumps(summary_result["action_items"], ensure_ascii=False)
+        meeting.status = "completed"
+
+        db.commit()
+        db.refresh(meeting)
+
+    except Exception as exc:
+        meeting.status = "failed"
+        meeting.error_message = str(exc)
+        db.commit()
+        db.refresh(meeting)
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Meeting processing failed: {str(exc)}"
+        )
 
     return _to_detail_response(meeting)
 
