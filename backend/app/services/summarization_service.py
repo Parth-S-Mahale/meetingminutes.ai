@@ -97,18 +97,16 @@ def summarize_meeting(transcript: str, title: str | None = None) -> Dict[str, An
         {"role": "user", "content": user_prompt},
     ]
 
-    inputs = tokenizer.apply_chat_template(
+    prompt = tokenizer.apply_chat_template(
         messages,
-        tokenize=True,
+        tokenize=False,
         add_generation_prompt=True,
-        return_tensors="pt",
     )
-
-    inputs = inputs.to(model.device)
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
     with torch.no_grad():
         outputs = model.generate(
-            inputs,
+            **inputs,
             max_new_tokens=settings.MAX_NEW_TOKENS,
             temperature=settings.TEMPERATURE,
             top_p=settings.TOP_P,
@@ -116,7 +114,7 @@ def summarize_meeting(transcript: str, title: str | None = None) -> Dict[str, An
             pad_token_id=tokenizer.eos_token_id,
         )
 
-    generated_tokens = outputs[0][inputs.shape[-1]:]
+    generated_tokens = outputs[0][inputs.input_ids.shape[-1]:]
     generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
 
     parsed = _extract_json_block(generated_text)
