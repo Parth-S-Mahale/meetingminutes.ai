@@ -51,6 +51,17 @@ def _to_detail_response(meeting: Meeting) -> MeetingDetailResponse:
     )
 
 
+def _save_summary_result(meeting: Meeting, summary_result: dict) -> None:
+    """Copy normalized AI output into the meeting record."""
+    meeting.summary = summary_result["summary"]
+    meeting.key_decisions = json.dumps(
+        summary_result["key_decisions"], ensure_ascii=False
+    )
+    meeting.action_items = json.dumps(
+        summary_result["action_items"], ensure_ascii=False
+    )
+
+
 @router.post(
     "/upload",
     response_model=MeetingDetailResponse,
@@ -103,9 +114,7 @@ def upload_meeting_audio(
             title=meeting.title
         )
 
-        meeting.summary = summary_result["summary"]
-        meeting.key_decisions = json.dumps(summary_result["key_decisions"], ensure_ascii=False)
-        meeting.action_items = json.dumps(summary_result["action_items"], ensure_ascii=False)
+        _save_summary_result(meeting, summary_result)
         meeting.status = "completed"
 
         db.commit()
@@ -145,6 +154,48 @@ def get_meeting(meeting_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Meeting with id={meeting_id} not found."
+        )
+
+    return _to_detail_response(meeting)
+
+
+@router.post("/{meeting_id}/summarize", response_model=MeetingDetailResponse)
+def regenerate_meeting_analysis(meeting_id: int, db: Session = Depends(get_db)):
+    """Run the LLM again using a saved transcript, without re-transcribing audio."""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Meeting with id={meeting_id} not found."
+        )
+
+    if not meeting.transcript or not meeting.transcript.strip():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This meeting has no transcript to summarize. Upload audio first."
+        )
+
+    try:
+        meeting.status = "summarizing"
+        meeting.error_message = None
+        db.commit()
+
+        summary_result = summarize_meeting(
+            transcript=meeting.transcript,
+            title=meeting.title,
+        )
+        _save_summary_result(meeting, summary_result)
+        meeting.status = "completed"
+        db.commit()
+        db.refresh(meeting)
+    except Exception as exc:
+        meeting.status = "failed"
+        meeting.error_message = str(exc)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Meeting analysis failed: {str(exc)}"
         )
 
     return _to_detail_response(meeting)

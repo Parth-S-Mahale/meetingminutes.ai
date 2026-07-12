@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     ASR_CHUNK_LENGTH_S: int = 30
 
     # Summarizer LLM
-    SUMMARIZER_MODEL_ID: str = "meta-llama/Llama-3.2-3B-Instruct"
+    SUMMARIZER_MODEL_ID: str = "gpt-4.1-mini"
     SUMMARIZER_DEVICE_MAP: str = "auto"
     SUMMARIZER_LOAD_IN_4BIT: bool = True
     MAX_NEW_TOKENS: int = 800
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     TOP_P: float = 0.9
 
     # Optional fallback provider
-    OPENAI_API_KEY: str = ""
+    OPENAI_API_KEY: str | None = None
 
     @field_validator("ALLOWED_AUDIO_EXTENSIONS", mode="before")
     @classmethod
